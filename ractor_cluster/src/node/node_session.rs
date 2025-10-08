@@ -546,7 +546,7 @@ impl NodeSession {
                         .expect("Time went backwards");
                     let delta_ms = (state.epoch.elapsed() - inst).as_millis();
                     tracing::debug!("Ping -> Pong took {delta_ms}ms");
-                    if delta_ms > 50 {
+                    if delta_ms > 2000 {
                         tracing::warn!(
                             "Super long ping detected {} - {} ({delta_ms}ms)",
                             state.local_addr,
