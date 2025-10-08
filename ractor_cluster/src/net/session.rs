@@ -8,6 +8,7 @@
 // TODO: RUSTLS + Tokio : https://github.com/tokio-rs/tls/blob/master/tokio-rustls/examples/server/src/main.rs
 
 use std::io::Write;
+use std::mem::size_of;
 use std::net::SocketAddr;
 
 use bytes::Bytes;
@@ -338,8 +339,9 @@ impl Actor for SessionWriter {
 
                     // encode payload with length prefixed of proto encoded binary data
                     let len = msg.encoded_len();
+                    let len_u64 = u64::try_from(len).expect("message too large to serialize");
                     let mut buf: Vec<u8> = Vec::with_capacity(len + size_of::<u64>());
-                    buf.write_all(&len.to_be_bytes())
+                    buf.write_all(&len_u64.to_be_bytes())
                         .expect("buffer should have enough capacity");
                     msg.encode(&mut buf)
                         .expect("buffer should have enough capacity");
@@ -443,7 +445,17 @@ impl Actor for SessionReader {
             }
             Self::Msg::ReadObject(length) if state.reader.is_some() => {
                 if let Some(stream) = &mut state.reader {
-                    match read_n_bytes(stream, length as usize).await {
+                    let length_usize = match usize::try_from(length) {
+                        Ok(l) => l,
+                        Err(_) => {
+                            tracing::error!(
+                                "Payload length {length} exceeds local platform capacity; closing session"
+                            );
+                            myself.stop(Some("payload_too_large".to_string()));
+                            return Ok(());
+                        }
+                    };
+                    match read_n_bytes(stream, length_usize).await {
                         Ok(buf) => {
                             tracing::trace!("Payload of length({}) received", buf.len());
                             // NOTE: Our implementation writes 2 messages when sending something over the wire, the first
